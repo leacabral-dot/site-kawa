@@ -1,0 +1,49 @@
+KAWA — SITE WEB PUBLIC + KAWI IA GEMINI
+======================================
+
+CE DOSSIER NE CONTIENT AUCUNE CLÉ API.
+Le serveur Python local a été remplacé par deux fonctions Netlify en JavaScript.
+Ne publiez pas le dossier de l'ancienne version avec son serveur Python.
+
+DOSSIERS ET FICHIERS
+--------------------
+website/index.html : page d'accueil, boutique, quiz, coffrets, KAWI
+website/styles.css : design KAWA
+website/app.js : interactions de la boutique et chat
+website/assets/ : images SVG des produits
+netlify/functions/chat.mjs : envoie les demandes à Gemini via Netlify (clé protégée)
+netlify/functions/health.mjs : vérifie la présence de la configuration IA
+netlify/functions/kawi-prompt.mjs : règles commerciales et instructions de KAWI
+netlify.toml : indique où sont la page et les fonctions
+
+GUIDE SIMPLE (SUR MAC)
+---------------------
+1) Ouvrez https://github.com/new et créez un dépôt nommé kawa-site.
+2) Décompressez le ZIP puis glissez les fichiers du dossier KAWA_Pret_A_Publier
+   dans GitHub > Add file > Upload files. Gardez la structure des dossiers !
+3) Confirmez avec Commit changes.
+4) Ouvrez https://app.netlify.com , connectez GitHub, sélectionnez le dépôt kawa-site.
+5) Vérifiez dans les réglages du déploiement que Publish directory = website.
+   Aucune commande de build n'est nécessaire.
+6) Une fois le site créé, allez dans Project configuration > Environment variables.
+   Ajoutez une variable GEMINI_API_KEY contenant votre clé Gemini personnelle.
+   Ne partagez jamais cette clé et ne la mettez jamais dans GitHub ou index.html.
+7) Dans Netlify > Deploys > Trigger deploy : publiez une nouvelle version.
+8) Visitez votre lien https://<nom-du-site>.netlify.app et ouvrez KAWI.
+   Pour vérifier la configuration, visitez https://<nom-du-site>.netlify.app/api/health
+   et cherchez ai_enabled: true. Cela indique que la clé est présente, pas forcément valide.
+9) Posez une question originale à KAWI ; vérifiez qu'il répond librement.
+
+IMPORTANT
+---------
+• Site public de démonstration : faux panier, aucun paiement ni vente réelle.
+• KAWA est une entreprise fictive : la certification Fairtrade est fictive.
+• Les quotas gratuits de Netlify et Gemini sont limités ; le site ou le chat peuvent
+  être interrompus si vous les atteignez.
+• Gemini gratuit peut utiliser les conversations pour améliorer ses produits.
+  Ne collectez pas d'informations personnelles, confidentielles ou de paiement.
+• Un endpoint IA public peut attirer des usages abusifs. Le code inclut un plafonnement
+  rudimentaire par instance ; pour un site commercial, prévoir sécurité supplémentaire
+  (CAPTCHA, limitation persistante, surveillance) et une politique de confidentialité.
+• AUCUN fichier ne doit contenir de clé API.
+• Toutes les réponses dépendent de votre projet Gemini et de votre quota.

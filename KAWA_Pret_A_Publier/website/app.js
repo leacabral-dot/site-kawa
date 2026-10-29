@@ -1,0 +1,143 @@
+/* KAWA — site étudiant fictif. IA locale via serveur_kawa.py ; aucune clé dans le navigateur. */
+'use strict';
+const $=id=>document.getElementById(id);
+const all=(selector,root=document)=>[...root.querySelectorAll(selector)];
+const eur=n=>new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'}).format(n);
+const normalized=t=>String(t??'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+const BLENDS={
+ aube:{name:'AUBE',origin:'Colombie',profile:'Doux',notes:'Chocolat & noisette',intensity:2,description:'Un réveil tout en douceur, aux notes réconfortantes de chocolat et de noisette.',color:'aube',grain:8.90,capsule:5.40,tag:'DOUX & LUMINEUX'},
+ terra:{name:'TERRA',origin:'Pérou',profile:'Équilibré',notes:'Cacao & caramel',intensity:3,description:'L’équilibre parfait pour le quotidien, entre cacao rond et caramel gourmand.',color:'terra',grain:8.70,capsule:5.60,tag:'L’ÉQUILIBRE PARFAIT'},
+ fuego:{name:'FUEGO',origin:'Honduras',profile:'Intense',notes:'Grillé & intense',intensity:5,description:'Une tasse audacieuse et puissante, pour les amateurs d’espresso de caractère.',color:'fuego',grain:9.20,capsule:5.90,tag:'INTENSE & AFFIRMÉ'}
+};
+const FORMATS={grains:'Grains · 250 g',capsules:'10 capsules · Original'};
+const GIFTS={
+ decouverte:{title:'Coffret Découverte',label:'Pour les curieux',price:{grains:21.90,capsules:18.90},description:'Deux cafés en grains ou les trois recettes en capsules, avec une jolie carte à offrir.',pict:'✳',className:''},
+ douceur:{title:'Coffret Douceur',label:'Pour les moments tendres',price:{grains:20.90,capsules:14.90},description:'Deux fois AUBE : une version classique et une décaféinée, dans le format choisi.',pict:'♡',className:'second'},
+ surmesure:{title:'Coffret Sur-mesure',label:'Pour une personne unique',price:{grains:19.90,capsules:16.90},description:'Son café préféré, un joli mug et une carte. Choisissez son format et ses goûts.',pict:'✦',className:'third'}
+};
+const priceFor=(blend,format,decaf)=>Number((BLENDS[blend][format==='grains'?'grain':'capsule']+(decaf?.60:0)).toFixed(2));
+const imageFor=(blend,format,decaf)=>`assets/${blend}-${format}-${decaf?'decaf':'classique'}.svg`;
+const productKey=(blend,format,decaf)=>`coffee:${blend}:${format}:${decaf?'decaf':'classic'}`;
+const giftKey=(kind,format,blend,decaf)=>`gift:${kind}:${format}:${blend||'aube'}:${decaf?'decaf':'classic'}`;
+const cartStore='kawa-collection-cart-v2';
+let cart={};
+try{const loaded=JSON.parse(localStorage.getItem(cartStore)||'{}');if(loaded&&typeof loaded==='object'){for(const [id,qty] of Object.entries(loaded)){if(itemFor(id)&&Number.isInteger(qty)&&qty>=1&&qty<=99)cart[id]=qty;}}}catch{}
+function itemFor(id){
+ const parts=id.split(':');
+ if(parts[0]==='coffee'&&parts.length===4){const [,blend,fmt,ca]=parts;if(!BLENDS[blend]||!FORMATS[fmt]||!['decaf','classic'].includes(ca))return null;const decaf=ca==='decaf';return {name:`${BLENDS[blend].name} ${decaf?'Décaféiné':'Classique'}`,detail:FORMATS[fmt],price:priceFor(blend,fmt,decaf),image:imageFor(blend,fmt,decaf)};}
+ if(parts[0]==='gift'&&parts.length===5){const [,kind,fmt,blend,ca]=parts;if(!GIFTS[kind]||!FORMATS[fmt]||!BLENDS[blend]||!['decaf','classic'].includes(ca))return null;let detail=fmt==='grains'?'Version grains':'Version capsules Original';if(kind==='decouverte')detail+=` · ${ca==='decaf'?'tous décaféinés':'classiques'}`;if(kind==='douceur')detail+=' · AUBE classique + décaféiné';if(kind==='surmesure')detail+=` · ${BLENDS[blend].name} ${ca==='decaf'?'décaféiné':'classique'} + mug`;return {name:GIFTS[kind].title,detail,price:GIFTS[kind].price[fmt],image:imageFor(kind==='surmesure'?blend:'aube',fmt,ca==='decaf')};}
+ return null;
+}
+function store(){try{localStorage.setItem(cartStore,JSON.stringify(cart));}catch{}}
+let toastTimer;
+function toast(text){const t=$('toast');t.textContent=text;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2800);}
+const selections={aube:{format:'grains',decaf:false},terra:{format:'grains',decaf:false},fuego:{format:'grains',decaf:false}};
+function coffeeCard(blend,id){const sel=selections[id];return `<article class="coffee-card" data-blend="${id}"><div class="coffee-art ${id}"><span class="blend-pill">${blend.tag}</span><img src="${imageFor(id,sel.format,sel.decaf)}" alt="Paquet KAWA ${blend.name}" loading="lazy"></div><div class="coffee-body"><div class="coffee-title"><h3>${blend.name}</h3><span class="coffee-price">${eur(priceFor(id,sel.format,sel.decaf))}</span></div><div class="coffee-profile">${blend.profile.toUpperCase()} · ${blend.notes}</div><p class="coffee-description">${blend.description}</p><span class="option-label">01 — CHOISISSEZ LE FORMAT</span><div class="seg-options" role="group" aria-label="Format ${blend.name}"><button data-format="grains" type="button" aria-pressed="true">☕ En grains</button><button data-format="capsules" type="button" aria-pressed="false">◌ Capsules</button></div><div class="decaf-line"><label for="decaf-${id}">Version décaféinée <small>Les mêmes arômes, sans caféine ou presque</small></label><input id="decaf-${id}" type="checkbox" data-decaf></div><div class="coffee-meta"><span>${blend.origin} · ${blend.intensity}/5 en intensité</span><span class="coffee-units">250 g</span></div><button class="add-button" type="button" data-add-coffee="${id}">Ajouter au panier <span>↗</span></button></div></article>`;}
+function renderCoffee(){
+ $('coffeeGrid').innerHTML=Object.entries(BLENDS).map(([id,blend])=>coffeeCard(blend,id)).join('');
+ all('.coffee-card').forEach(card=>{
+  const id=card.dataset.blend;
+  all('[data-format]',card).forEach(btn=>btn.addEventListener('click',()=>{selections[id].format=btn.dataset.format;refreshCard(card,id);}));
+  card.querySelector('[data-decaf]').addEventListener('change',e=>{selections[id].decaf=e.target.checked;refreshCard(card,id);});
+  card.querySelector('[data-add-coffee]').addEventListener('click',()=>{const s=selections[id];addItem(productKey(id,s.format,s.decaf));});
+ });
+}
+function refreshCard(card,id){const s=selections[id];card.querySelector('.coffee-art img').src=imageFor(id,s.format,s.decaf);card.querySelector('.coffee-art img').alt=`${BLENDS[id].name}, ${FORMATS[s.format]}, ${s.decaf?'décaféiné':'classique'}`;card.querySelector('.coffee-price').textContent=eur(priceFor(id,s.format,s.decaf));card.querySelector('.coffee-units').textContent=s.format==='grains'?'250 g':'10 capsules';all('[data-format]',card).forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.format===s.format)));}
+function giftCard([id,gift],i){return `<article class="gift-card"><div class="gift-visual ${gift.className}"><span class="gift-badge">${String(i+1).padStart(2,'0')} / 03 · POUR 1 PERSONNE</span><div class="gift-art-box"><small>COFFRET CADEAU</small><strong>KAWA.</strong><span>${gift.pict}</span><small>JUST FOR YOU</small></div></div><div class="gift-body"><h3>${gift.title}</h3><span class="gift-subline">${gift.label}</span><p>${gift.description}</p><div class="gift-bottom-row"><strong>dès ${eur(Math.min(...Object.values(gift.price)))}</strong><button type="button" data-gift="${id}">Personnaliser ↗</button></div></div></article>`;}
+function renderGifts(){$('giftGrid').innerHTML=Object.entries(GIFTS).map(giftCard).join('');all('[data-gift]').forEach(b=>b.addEventListener('click',()=>openGift(b.dataset.gift)));}
+function refreshCart(){
+ const totalQty=Object.values(cart).reduce((a,b)=>a+b,0);$('cartCount').textContent=String(totalQty);
+ let subtotal=0;const box=$('cartItems');box.replaceChildren();
+ for(const [id,qty] of Object.entries(cart)){const item=itemFor(id);if(!item)continue;subtotal+=item.price*qty;const row=document.createElement('div');row.className='cart-item';const img=document.createElement('img');img.src=item.image;img.alt='';const center=document.createElement('div');const title=document.createElement('h3');title.textContent=item.name;const desc=document.createElement('p');desc.textContent=item.detail;const amount=document.createElement('strong');amount.textContent=eur(item.price*qty);center.append(title,desc,amount);const q=document.createElement('div');q.className='cart-qty';for(const [sign,delta] of [['−',-1],['+',1]]){const btn=document.createElement('button');btn.type='button';btn.textContent=sign;btn.setAttribute('aria-label',delta===1?'Ajouter une unité':'Retirer une unité');btn.addEventListener('click',()=>adjustItem(id,delta));q.append(btn);if(delta===-1){const count=document.createElement('span');count.textContent=qty;q.append(count);}}row.append(img,center,q);box.append(row);}
+ if(!totalQty)box.innerHTML='<div class="empty-cart"><span>☕</span><h3>Votre panier est encore vide.</h3><p>Un bon café vous attend !</p></div>';
+ const shipping=totalQty?(subtotal>=35?0:4.90):0;
+ $('cartSubtotal').textContent=eur(subtotal);$('cartShipping').textContent=!totalQty?'—':shipping===0?'Offerte':eur(shipping);$('cartTotal').textContent=eur(subtotal+shipping);$('cartDeliveryHint').textContent=!totalQty?'Livraison gratuite dès 35 € d’achat.':shipping===0?'✓ Livraison offerte.':`Encore ${eur(35-subtotal)} pour la livraison offerte.`;$('checkoutBtn').disabled=!totalQty;
+}
+function addItem(id){const item=itemFor(id);if(!item)return;cart[id]=Math.min((cart[id]||0)+1,99);store();refreshCart();toast(`${item.name} ajouté au panier ♡`);}
+function adjustItem(id,change){if(!cart[id])return;cart[id]+=change;if(cart[id]<1)delete cart[id];else cart[id]=Math.min(99,cart[id]);store();refreshCart();}
+function openModal(id){$('overlay').hidden=false;$(id).hidden=false;document.body.classList.add('no-scroll');}
+function closeModal(){for(const id of ['cartDrawer','giftModal'])$(id).hidden=true;$('overlay').hidden=true;document.body.classList.remove('no-scroll');}
+$('openCart').addEventListener('click',()=>openModal('cartDrawer'));all('[data-close-modal]').forEach(b=>b.addEventListener('click',closeModal));$('overlay').addEventListener('click',closeModal);
+$('checkoutBtn').addEventListener('click',()=>toast('Projet étudiant : commande et paiement non activés.'));
+function openGift(kind,defaults={}){
+ const g=GIFTS[kind];if(!g)return;
+ $('giftModalBody').innerHTML=`<span class="eyebrow dark">♡ UNE ATTENTION POUR UNE PERSONNE</span><h2 id="giftModalTitle">${g.title}</h2><p>${g.description}</p><form id="giftForm"><label for="giftFormat">Quel équipement possède la personne ?</label><select id="giftFormat"><option value="grains">Machine à grains / moulin · Grains 250 g</option><option value="capsules">Machine Nespresso Original · Capsules (10)</option></select><div id="giftExtra"></div><div class="modal-summary" id="giftSummary"></div><button class="button button-dark" type="submit">Ajouter ce coffret au panier ↗</button></form>`;
+ $('giftFormat').value=defaults.format==='capsules'?'capsules':'grains';
+ const extra=$('giftExtra');
+ if(kind==='decouverte')extra.innerHTML=`<label for="giftCaffeine">Choisir la version des cafés</label><select id="giftCaffeine"><option value="classic">Classiques</option><option value="decaf">Tous décaféinés</option></select>`;
+ else if(kind==='surmesure')extra.innerHTML=`<label for="giftBlend">Quel profil de goût ?</label><select id="giftBlend"><option value="aube">AUBE · doux</option><option value="terra">TERRA · équilibré</option><option value="fuego">FUEGO · intense</option></select><label for="giftCaffeine">Quelle version ?</label><select id="giftCaffeine"><option value="classic">Classique</option><option value="decaf">Décaféinée</option></select>`;
+ if($('giftBlend')&&BLENDS[defaults.blend])$('giftBlend').value=defaults.blend;
+ if($('giftCaffeine')&&defaults.decaf)$('giftCaffeine').value='decaf';
+ function updateSummary(){const fmt=$('giftFormat').value;let content='';if(kind==='decouverte')content=fmt==='grains'?'2 paquets de 250 g : AUBE + FUEGO':'3 étuis de 10 capsules : AUBE + TERRA + FUEGO';else if(kind==='douceur')content=fmt==='grains'?'2 paquets AUBE de 250 g : un classique et un décaféiné':'2 étuis AUBE de 10 capsules : un classique et un décaféiné';else content=`1 ${fmt==='grains'?'paquet de 250 g':'étui de 10 capsules'} ${BLENDS[$('giftBlend').value].name}, ${$('giftCaffeine').value==='decaf'?'décaféiné':'classique'} + 1 mug`;
+ $('giftSummary').textContent=`${content} + carte cadeau · ${eur(g.price[fmt])} · Pour une personne`;
+ }
+ $('giftForm').addEventListener('change',updateSummary);updateSummary();
+ $('giftForm').addEventListener('submit',ev=>{ev.preventDefault();const fmt=$('giftFormat').value;const blend=$('giftBlend')?.value||'aube';const decaf=$('giftCaffeine')?.value==='decaf';addItem(giftKey(kind,fmt,blend,decaf));closeModal();});openModal('giftModal');
+}
+// Quiz de personnalisation — sans serveur, immédiatement interactif.
+const quiz={step:0,answers:{}};
+const questions=[
+ {title:'Pour qui est ce café ?',help:'On s’adapte à la personne qui va le déguster.',options:[['self','Pour moi','Une pause rien qu’à moi'],['gift','Pour offrir','Un cadeau à une personne']]},
+ {title:'Quel équipement utilisera-t-elle ?',help:'C’est indispensable pour proposer un format compatible.',options:[['grains','Machine à grains','Ou moulin + cafetière'],['original','Nespresso Original','Capsules compatibles'],['vertuo','Nespresso Vertuo','Capsules spécifiques'],['none','Pas de machine','Ou autre équipement'],['unknown','Je ne sais pas','Je préfère vérifier']]},
+ {title:'Quel profil de goût ?',help:'Une petite indication suffit pour trouver la bonne recette.',options:[['aube','Doux & gourmand','Chocolat et noisette'],['terra','Équilibré','Cacao et caramel'],['fuego','Fort & intense','Notes grillées']]},
+ {title:'Avec ou sans caféine ?',help:'La version décaféinée existe pour chaque recette.',options:[['classic','Classique','Le café de tous les jours'],['decaf','Décaféiné','Pour varier les moments']]}
+];
+function renderQuiz(){const body=$('quizBody');$('quizBack').hidden=quiz.step===0;$('quizCounter').textContent=quiz.step===4?'VOTRE RÉSULTAT':`QUESTION ${quiz.step+1} / 4`;$('quizProgressBar').style.width=`${(quiz.step===4?4:quiz.step+1)*25}%`;
+ if(quiz.step===4){renderResult();return;}
+ const q=questions[quiz.step];body.innerHTML=`<h3>${q.title}</h3><p class="quiz-help">${q.help}</p><div class="quiz-choices">${q.options.map(([value,label,info])=>`<button class="quiz-choice" type="button" data-answer="${value}">${label}<span>${info}</span></button>`).join('')}</div>`;
+ all('[data-answer]',body).forEach(b=>b.addEventListener('click',()=>{quiz.answers[quiz.step]=b.dataset.answer;quiz.step++;renderQuiz();}));
+}
+function renderResult(){const body=$('quizBody');const [intent,machine,blend,ca]=[0,1,2,3].map(i=>quiz.answers[i]);const gifting=intent==='gift';const fmt=machine==='original'?'capsules':'grains';
+ if(!['grains','original'].includes(machine)){const msg=machine==='vertuo'?"Nos capsules sont compatibles avec le système Original, pas avec Vertuo. Nous ne pouvons donc pas vous conseiller de capsules KAWA pour cette machine.":machine==='none'?"Nos cafés existent seulement en grains ou en capsules Nespresso Original. Sans équipement adapté, nous ne pouvons pas vous conseiller un produit compatible.":"Pour éviter d'offrir un format inadapté, nous avons besoin de connaître la machine de la personne.";body.innerHTML=`<p class="quiz-result-tag">LE CONSEIL KAWA</p><h3>On préfère être sûrs. ♡</h3><p class="quiz-warning">${msg}</p><p class="quiz-help">Vous pouvez vérifier le type de machine, puis recommencer le quiz, ou demander conseil à KAWI.</p><div class="quiz-result-actions"><button type="button" id="quizAskAi">Demander à KAWI ↗</button><button type="button" id="quizTryAgain" class="secondary">Recommencer</button></div>`;$('quizAskAi').addEventListener('click',openChat);$('quizTryAgain').addEventListener('click',resetQuiz);return;}
+ const decaf=ca==='decaf';const p=BLENDS[blend];const price=priceFor(blend,fmt,decaf);const gifttype=blend==='aube'?'douceur':'surmesure';body.innerHTML=`<p class="quiz-result-tag">✳ NOTRE RECOMMANDATION POUR ${gifting?'VOTRE CADEAU':'VOUS'}</p><div class="quiz-result"><img src="${imageFor(blend,fmt,decaf)}" alt="Café ${p.name}"><div><h3>${p.name}</h3><p>${p.profile} · ${fmt==='grains'?'250 g en grains':'10 capsules Original'} · ${decaf?'décaféiné':'classique'}</p><strong>${eur(price)}</strong></div></div><p class="quiz-help">${p.description} ${gifting?'Parfait pour un cadeau choisi avec attention.':'Un café qui correspond à votre préparation et vos goûts.'}</p><div class="quiz-result-actions"><button type="button" id="quizAdd">Ajouter le café ↗</button><button type="button" class="secondary" id="quizGift">Composer un coffret ♡</button></div>`;
+ $('quizAdd').addEventListener('click',()=>addItem(productKey(blend,fmt,decaf)));$('quizGift').addEventListener('click',()=>openGift('surmesure',{format:fmt,blend,decaf}));
+}
+function resetQuiz(){quiz.step=0;quiz.answers={};renderQuiz();}
+$('quizBack').addEventListener('click',()=>{quiz.step=Math.max(quiz.step-1,0);renderQuiz();});$('quizRestart').addEventListener('click',resetQuiz);
+// Chatbot KAWI — Gemini via le serveur local, ou démo de secours.
+let aiEnabled=false,aiWaiting=false;
+const history=[];
+let chatInitialized=false;
+const fallback={stage:'',equip:'',taste:'',decaf:false,gift:false};
+function openChat(){$('chatPanel').hidden=false;$('chatFab').hidden=true;$('chatFab').setAttribute('aria-expanded','true');if(!chatInitialized){chatInitialized=true;bot('Bonjour et bienvenue chez KAWA ! ☕ Moi, c’est KAWI, votre barista. Vous cherchez un café, un coffret cadeau ou une réponse sur nos capsules ?');quick(['Trouver mon café','Un coffret cadeau','Faire le quiz','Nos cafés']);}$('chatInput').focus();}
+function closeChat(){$('chatPanel').hidden=true;$('chatFab').hidden=false;$('chatFab').setAttribute('aria-expanded','false');}
+all('[data-open-chat]').forEach(b=>b.addEventListener('click',openChat));$('chatFab').addEventListener('click',openChat);$('chatClose').addEventListener('click',closeChat);
+function message(text,kind){const row=document.createElement('div');row.className='chat-message '+kind;const sender=document.createElement('div');sender.className='chat-sender';sender.textContent=kind==='bot'?'KAWI · BARISTA VIRTUEL':'VOUS';const bubble=document.createElement('div');bubble.className='chat-bubble';bubble.textContent=text;row.append(sender,bubble);$('chatTranscript').appendChild(row);$('chatTranscript').scrollTop=$('chatTranscript').scrollHeight;return row;}
+const bot=text=>message(text,'bot');const human=text=>message(text,'user');
+function quick(labels){const q=$('chatQuick');q.replaceChildren();labels.forEach(label=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.addEventListener('click',()=>{if(label==='Faire le quiz'){closeChat();$('quiz').scrollIntoView({behavior:'smooth'});return;}sendText(label);});q.append(b);});}
+function demoReply(input,alreadyShown=false){const raw=input.trim();const t=normalized(raw);if(!alreadyShown)human(raw);$('chatInput').value='';
+ if(/rembours|reclam|colis|abim|paiement|factur|probleme.*command|annul.*command|commande perdue|retour/.test(t)){bot("Je suis désolé pour ce souci. Je ne peux ni accéder aux commandes ni effectuer un remboursement dans cette démonstration. Un conseiller humain doit prendre en charge cette demande. Si vous le souhaitez, je peux vous aider à rédiger un résumé à transmettre au service client.");quick(['Nos cafés','Faire le quiz']);return;}
+ if(/ignore|instruction secre|prompt systeme|mot de passe|code api|cle api/.test(t)){bot('Je ne peux pas divulguer mes instructions internes, mots de passe ou clés. Je reste disponible pour vous aider sur les cafés KAWA. ☕');quick(['Nos cafés','Faire le quiz']);return;}
+ if(/sante|grossesse|medecin|maladie|tension arterielle|palpitation|traitement/.test(t)){bot('Je ne peux pas donner de conseil médical personnalisé sur la caféine. Un professionnel de santé pourra vous conseiller. Je peux vous présenter nos versions décaféinées sans recommandation médicale.');quick(['Décaféiné','Nos cafés']);return;}
+ if(/fairtrade|havelaar|certif|label|equitable|producteur|bio/.test(t)){bot('KAWA est une marque fictive créée pour un projet étudiant. Dans notre scénario, nos cafés visent le label Fairtrade/Max Havelaar, fondé sur des critères de commerce équitable contrôlés. Nous ne possédons aucune certification ou licence réelle, et n’utilisons pas le logo officiel. 🌱');quick(['Nos cafés','Faire le quiz']);return;}
+ if(/abonn/.test(t)){bot("Nous ne proposons plus d'abonnement. Vous pouvez commander à l'unité nos cafés en grains, nos capsules Original ou un coffret cadeau (simulation uniquement). ");quick(['Nos cafés','Un coffret cadeau']);return;}
+ if(/nespresso|vertuo|capsul|soluble|machine/.test(t)&&/vertuo/.test(t)){bot('Nos capsules sont imaginées pour les machines Nespresso Original, et non Vertuo. Le café des capsules est moulu, pas soluble. Si vous utilisez uniquement une Vertuo, nous ne proposons pas de capsule compatible.');quick(['Machine à grains','Faire le quiz']);return;}
+ if(/livraison|frais de port|expedi|livrer/.test(t)){bot('Livraison simulée en France : 4,90 € en dessous de 35 € d’achat, offerte à partir de 35 €. Ce projet ne permet pas de passer de vraie commande.');quick(['Nos cafés','Un coffret cadeau']);return;}
+ if(/quiz/.test(t)){bot('Notre quiz en 4 questions vous aide à choisir selon la personne, sa machine, ses goûts et sa préférence classique ou décaféinée. Cliquez sur « Faire le quiz » juste ici.');quick(['Faire le quiz','Nos cafés']);return;}
+ if(/coffret|cadeau|offrir|anniversaire|ami|amie|maman|papa/.test(t)){
+ fallback.gift=true;
+ if(/capsule|original/.test(t))fallback.equip='capsules';else if(/grain|broyeur|moulin/.test(t))fallback.equip='grains';
+ if(/decaf|sans cafeine/.test(t))fallback.decaf=true;
+ if(/aube|doux/.test(t))fallback.taste='aube';else if(/terra|equilibr/.test(t))fallback.taste='terra';else if(/fuego|corse|intens/.test(t))fallback.taste='fuego';
+ if(fallback.equip&&fallback.taste){bot(`Pour une seule personne, je vous suggère le coffret Sur-mesure : ${BLENDS[fallback.taste].name} ${fallback.decaf?'décaféiné':'classique'} en ${FORMATS[fallback.equip]} + un mug et une carte, à ${eur(GIFTS.surmesure.price[fallback.equip])}. ♡`);quick(['Faire le quiz','La livraison']);}
+ else if(fallback.equip){bot(`Quelle jolie idée ! ♡ Pour votre cadeau ${fallback.equip==='capsules'?'en capsules Original':'en grains'}${fallback.decaf?' décaféiné':''}, vous pouvez choisir le coffret Découverte ou Sur-mesure. La personne préfère un café doux, équilibré ou intense ?`);quick(['Doux','Équilibré','Intense','Faire le quiz']);}
+ else{bot('Quelle jolie idée ! ♡ Nous avons trois coffrets pour une seule personne : Découverte (plusieurs arômes), Douceur (AUBE classique + décaféiné), et Sur-mesure (café au choix + mug + carte). Connaissez-vous sa machine : grains ou capsules Nespresso Original ?');quick(['Machine à grains','Capsules Original','Faire le quiz']);}return;
+ }
+ if(/devoir|math|politique|election|dissertation/.test(t)){bot('Je suis le barista de KAWA, spécialisé dans nos cafés, nos cadeaux et nos conditions de vente. Je ne peux pas traiter cette demande hors de mon rôle, mais je peux vous aider à choisir un café !');quick(['Nos cafés','Faire le quiz']);return;}
+ if(/prix|tarif|catalogue|nos cafes|tous les cafes/.test(t)){bot('Nos trois cafés : AUBE doux, TERRA équilibré, FUEGO intense. Tous existent en grains (250 g, de 8,70 € à 9,20 €) et en capsules Original (10, de 5,40 € à 5,90 €), chacun aussi en décaféiné (+0,60 €). Coffrets cadeaux dès 14,90 €.');quick(['Trouver mon café','Un coffret cadeau','Faire le quiz']);return;}
+ if(/decaf|sans cafeine/.test(t)){fallback.decaf=true;bot('Bonne nouvelle : AUBE, TERRA et FUEGO existent tous en décaféiné ! ☕ Les grains coûtent entre 9,30 € et 9,80 € et les capsules Original entre 6,00 € et 6,50 €. Utilisez-vous une machine à grains ou Nespresso Original ?');quick(['Machine à grains','Capsules Original','Faire le quiz']);return;}
+ let fmt=null;if(/capsule|original/.test(t))fmt='capsules';else if(/grain|broyeur|moulin/.test(t))fmt='grains';if(fmt)fallback.equip=fmt;
+ let blend=null;if(/aube|doux|chocolat|noisette/.test(t))blend='aube';else if(/terra|equilibr|caramel/.test(t))blend='terra';else if(/fuego|corse|fort|intens/.test(t))blend='fuego';if(blend)fallback.taste=blend;
+ if(/budget|moins de|maximum|\d+\s*(€|euro)/.test(t)){const m=t.match(/(\d+(?:[.,]\d+)?)\s*(?:€|euros?)/);if(m&&/livr|compris/.test(t)){const budget=Number(m[1].replace(',','.'));if(budget<10.30){bot(`Avec ${eur(budget)} livraison comprise, aucun produit KAWA n'entre dans ce budget pour un achat seul. Le moins cher est un étui AUBE de 10 capsules à 5,40 € + 4,90 € de livraison = 10,30 €.`);quick(['Nos cafés','Faire le quiz']);return;}}}
+ if(fallback.equip&&fallback.taste){const p=BLENDS[fallback.taste],price=priceFor(fallback.taste,fallback.equip,fallback.decaf);bot(`Je vous conseille ${p.name} ${fallback.decaf?'décaféiné':'classique'} : ${p.notes}, en ${FORMATS[fallback.equip]} pour ${eur(price)}. ${fallback.gift?'Un coffret Sur-mesure avec ce café peut être une belle attention. ♡':'C’est une très jolie façon de découvrir KAWA !'}`);quick(['Un coffret cadeau','Faire le quiz','La livraison']);return;}
+ if(fallback.equip){bot('Parfait ! Plutôt un café doux (AUBE), équilibré (TERRA) ou intense (FUEGO) ? Tous existent aussi en décaféiné.');quick(['Doux','Équilibré','Intense']);return;}
+ if(fallback.taste){bot('Et pour vous conseiller le bon format : vous avez une machine à grains / un moulin, ou une machine Nespresso Original ?');quick(['Machine à grains','Capsules Original']);return;}
+ if(/bonjour|salut|coucou|hello|merci|super/.test(t)){bot('Avec plaisir ! ☕ Je peux vous conseiller un café en grains, des capsules Original, une version décaféinée ou un coffret cadeau.');quick(['Trouver mon café','Un coffret cadeau','Faire le quiz']);return;}
+ bot('Je peux vous guider parmi AUBE, TERRA et FUEGO, en grains ou capsules Original, classique ou décaféiné. Pour commencer, avez-vous une machine à grains ou Nespresso Original ? ☕');quick(['Machine à grains','Capsules Original','Faire le quiz']);
+}
+async function sendText(raw){const msg=String(raw??'').trim();if(!msg||aiWaiting)return;if(!aiEnabled){demoReply(msg);return;}aiWaiting=true;human(msg);$('chatInput').value='';quick([]);history.push({role:'user',content:msg});const loading=bot('Je réfléchis à votre prochaine pause… ☕');try{const c=new AbortController();const timer=setTimeout(()=>c.abort(),35000);let resp;try{resp=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:history.slice(-14)}),signal:c.signal});}finally{clearTimeout(timer);}const data=await resp.json().catch(()=>({}));if(!resp.ok)throw Error(typeof data.error==='string'?data.error:`Erreur serveur ${resp.status}`);if(typeof data.reply!=='string'||!data.reply.trim())throw Error('Réponse Gemini vide.');loading.remove();bot(data.reply);history.push({role:'assistant',content:data.reply});$('chatModeLabel').textContent='Votre barista IA · Connectée';quick(['Faire le quiz','Un coffret cadeau','La livraison']);}catch(e){loading.remove();history.pop();aiEnabled=false;$('chatModeLabel').textContent='Votre barista virtuel · Démo';$('chatDisclaimer').textContent='Mode démo · Connexion IA indisponible';const reason=e.name==='AbortError'?'Gemini met trop de temps à répondre.':String(e.message||'Erreur inconnue').slice(0,200);bot(`⚠️ Connexion Gemini impossible : ${reason}\nJe passe en mode démonstration. Vérifiez la connexion Gemini ou les réglages Netlify, puis actualisez la page.`);demoReply(msg,true);}finally{aiWaiting=false;}}
+$('chatForm').addEventListener('submit',e=>{e.preventDefault();const v=$('chatInput').value.trim();if(v)sendText(v);});
+if(['http:','https:'].includes(location.protocol)){fetch('/api/health',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(d=>{if(d?.ai_enabled){aiEnabled=true;$('chatModeLabel').textContent='Votre barista IA · Prête à tester';$('chatDisclaimer').textContent='Mode IA · Questions transmises à Gemini, sans données sensibles';}}).catch(()=>{});}
+$('menuToggle').addEventListener('click',()=>{const nav=$('mainNav');const open=nav.classList.toggle('open');$('menuToggle').setAttribute('aria-expanded',String(open));});all('#mainNav a').forEach(a=>a.addEventListener('click',()=>$('mainNav').classList.remove('open')));
+window.addEventListener('keydown',e=>{if(e.key==='Escape'){if(!$('giftModal').hidden||!$('cartDrawer').hidden)closeModal();else if(!$('chatPanel').hidden)closeChat();}});
+renderCoffee();renderGifts();renderQuiz();refreshCart();
